@@ -1,0 +1,470 @@
+% $Id: h838.Rnw 337 2012-09-20 14:20:21Z jbao $
+
+\documentclass[a4paper]{article}
+
+\usepackage{graphicx,subfig}
+\usepackage{pdfpages}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\usepackage{longtable}
+\usepackage{color, colortbl}
+\definecolor{Gray}{gray}{0.9}
+
+\DeclareMathOperator{\erf}{erf}
+\DeclareMathOperator{\IQR}{IQR}
+\everymath{\displaystyle}
+
+\renewcommand{\thesubfigure}{\Alph{subfigure}}
+
+\newenvironment{narrow}[2]{%
+  \begin{list}{}{%
+  \setlength{\topsep}{0pt}%
+  \setlength{\leftmargin}{#1}%
+  \setlength{\rightmargin}{#2}%
+  \setlength{\listparindent}{\parindent}%
+  \setlength{\itemindent}{\parindent}%
+  \setlength{\parsep}{\parskip}}%
+\item[]}{\end{list}}
+
+\title{H838/HPAEC Cytokine/Transcriptome Data Analysis}
+\author{Jie Bao}
+
+\begin{document}
+
+\maketitle
+
+<<label=base,echo=False,fig=FALSE>>=
+library(ggplot2)
+library(reshape)
+library(genefilter)
+library(preprocessCore)
+library(marray)
+library(gplots)
+library(plotrix)
+library(org.Hs.eg.db)
+library(gage)
+library(devtools)
+load_all('~/code/github/util')
+
+fontsize <- 15
+theme_set(theme_bw(fontsize))
+
+subplot <- function(x, y) viewport(layout.pos.row=x, layout.pos.col=y) 
+vplayout <- function(x, y) {
+    grid.newpage() 
+    pushViewport(viewport(layout=grid.layout(x,y)))
+}
+@
+
+<<label=data,echo=False,fig=FALSE,cache=True>>=
+wd <- '/Users/bao/work/hmec/h838/'
+dat <- read.table(paste(wd,"all.qnorm.txt",sep=""),sep="\t",header=T,
+    quote="\"",comment.char="")
+dat.ctrl <- read.delim(paste(wd,'h838_ctrl_20714.dat',sep=''),sep='|')
+dat.treated <- read.delim(paste(wd,'h838_treated_20714.dat',sep=''),sep='|')
+names(dat.ctrl) <- c('Gene','0','0.5','1','2','3','4','5','10','15','24')
+names(dat.treated) <- names(dat.ctrl)
+cytokine <- c('CXCL1','ICAM1','IL2RA','CCL7','MIF','CXCL12','IL6','IL7','IL8',
+    'IL9','IL10','IL12A','IL12B','IL13','IL15','FGF2','CSF3','CSF2','IFNG',
+    'CXCR3','CCL2','PDGFB','CCL5','TNF','VEGFA')
+cytokine.go <- read.delim(paste(wd,'cytokine.go',sep=''), header=F)$V1
+col <- c('H838_HMEC_0h_unscratched_5617835005_A.mean',
+    'H838_Mono_0h_unscratched_5617835005_K.mean',
+    'H838_HMEC_0h_unscratched_2_5617835033_I.mean',
+    'H838_Mono_0h_unscratched_2_5617835033_K.mean')
+
+# filter microarray by IQR
+mat <- dat[,grep('mean',names(dat))]
+all.iqr <- apply(mat,1,IQR,na.rm=T)
+dat <- dat[order(all.iqr,decreasing=T),]
+cutoff <- sum(all.iqr>3)
+#dat <- dat[1:cutoff,]
+dat <- dat[!duplicated(dat$Entrez_Gene_ID),]
+dat <- dat[!is.na(dat$Entrez_Gene_ID),]
+
+all.basal <- dat[,match(col,names(dat))]
+rownames(all.basal) <- dat$Entrez_Gene_ID
+@
+
+% ----------------------------------------------------------------------------
+
+<<label=limma,echo=False,fig=True,eval=True,width=7,height=7,eval=False>>=
+library(limma)
+design <- model.matrix(~ 0+factor(c(2,1,2,1)))
+colnames(design) <- c('homo','hetero')
+rowind <- which(all.basal==0, arr.ind=T)[1]
+all.basal <- all.basal[-rowind,]
+fit <- lmFit(log2(all.basal), design)
+contrast.matrix <- makeContrasts(hetero-homo, levels=design)
+fit2 <- contrasts.fit(fit, contrast.matrix)
+fit2 <- eBayes(fit2)
+res.limma <- topTable(fit2, coef=1, adjust="BH", number=nrow(all.basal))
+res.limma$symbol <- unlist(mget(res.limma$ID, org.Hs.egSYMBOL, ifnotfound=NA))
+
+print(ggplot(res.limma,aes(logFC,-log10(adj.P.Val))) + 
+    geom_point() + 
+    #geom_text(data=res.limma[res.limma$adj.P.Val<0.05,],aes(label=symbol),size=3,
+    #    vjust=-0.2) + 
+    geom_vline(aes(xintercept=0),colour='blue',linetype='dashed') +
+    geom_hline(aes(yintercept=-log10(0.05)),colour='red',linetype='dashed') +
+    xlab(expression(paste('Estimated ',log[2],' fold change',
+        '(heterogeneous - homogeneous)'))) + 
+    xlim(-1,1) + ylim(0,2.6) +
+    ylab(expression(paste(-log[10],' ',italic(q),'-value'))) +
+    opts(title='Linear model fit of basal expression\n')
+)
+@
+
+% ----------------------------------------------------------------------------
+
+<<label=gage,echo=False,fig=False,cache=True,eval=False>>=
+# GAGE
+library(gage)
+library(gageData)
+data(go.gs)
+library(xtable)
+
+mSigDB <- readLines("~/work/MSigDB/c2.all.v3.0.entrez.gmt")
+mSigDB <- strsplit(mSigDB, "\t")
+names(mSigDB) <- sapply(mSigDB, function(x) x[1])
+mSigDB <- sapply(mSigDB, function(x) x[3:length(x)])
+
+#test with direction: either up or down
+res <- gage(log2(all.basal), gsets = mSigDB, ref = c(2,4), samp = c(1,3), 
+    compare='as.group', saaTest=gs.tTest, same.dir=T)
+df <- as.data.frame(res$greater)
+df <- subset(df[,c('p.val','set.size')], p.val<0.01)
+tbl <- xtable(df, caption='Significantly ($p < 0.01$) upregulated gene sets in heterogeneous coculture compared to homogeneous coculture.', display=c('s','e','d'))
+print(tbl, tabular.environment = "longtable", 
+    add.to.row=list(as.list(seq(1,nrow(df),2)),rep("\\rowcolor{Gray} ",
+    length(seq(1,nrow(df),2)))), include.rownames=T, 
+    file='~/code/svn/Publications/branches/h838/table_gage_up.tex',
+    caption.placement='top')
+df <- as.data.frame(res$less)
+df <- subset(df[,c('p.val','set.size')], p.val<0.01)
+tbl <- xtable(df, caption='Significantly ($p < 0.01$) downregulated gene sets in heterogeneous coculture compared to homogeneous coculture.', display=c('s','e','d'))
+print(tbl, tabular.environment = "longtable", 
+    add.to.row=list(as.list(seq(1,nrow(df),2)),rep("\\rowcolor{Gray} ",
+    length(seq(1,nrow(df),2)))), include.rownames=T, 
+    file='~/code/svn/Publications/branches/h838/table_gage_down.tex',
+    caption.placement='top')
+@
+
+% ----------------------------------------------------------------------------
+
+<<label=enrichment,echo=False,fig=False,cache=True>>=
+#mSigDB <- readLines("~/work/MSigDB/c2.all.v3.0.symbols.gmt")
+mSigDB <- readLines("~/code/R/GSEA-P-R/c3.tft.v3.0.symbols.gmt")
+mSigDB <- strsplit(mSigDB, "\t")
+names(mSigDB) <- sapply(mSigDB, function(x) x[1])
+mSigDB <- sapply(mSigDB, function(x) x[3:length(x)])
+
+tpoint <- c(0.5,1:5,10,15,24)
+ctrl <- read.delim('~/work/hmec/h838/h838_ctrl_14922.dat', sep='|')
+treated <- read.delim('~/work/hmec/h838/h838_treated_14922.dat', sep='|')
+diff <- read.delim('~/work/hmec/h838/h838_diff_14922.dat', sep='|')
+all <- NULL
+threshold <- 0.9465
+for (i in 1:length(tpoint)) {
+    glist <- data.frame(ctrl=ctrl[,i+2], treated=treated[,i+2], row.names=diff$Gene)
+
+    #test with direction: either up or down
+    res <- gage(glist, gsets = mSigDB, ref = 1, samp = 2, 
+        compare='paired', saaTest=gs.tTest, same.dir=T)
+    current <- as.data.frame(res$greater)
+    current <- current[!is.na(current$q.val),]
+    current <- subset(current, p.val<0.05)
+    current$time <- tpoint[i]
+    all <- rbind(all, current)
+
+    #idx <- current$q.val < threshold
+    #idx <- 1:nrow(current)
+    #if (i == 1)
+    #    common <- rownames(current)[idx]
+    #else
+    #    common <- intersect(common, rownames(current)[idx])
+}
+
+final <- matrix(0,length(common),length(tpoint))
+for (j in 1:length(tpoint)) {
+    for (i in 1:length(common)) {
+        final[i,j] = all.path[[j]]$q.val[rownames(all.path[[j]])==common[i]]
+    }
+}
+list(common=common, final=final)
+@
+
+% ----------------------------------------------------------------------------
+
+%\begin{figure}[ht]
+%\begin{center}
+%<<label=fit_volcano,echo=False,fig=True,width=7,height=7>>=
+%tpoint <- c(0,0.5,1:5,10,15,24)
+%ctrl <- read.delim('~/work/hmec/h838/h838_ctrl_14922.dat', sep='|')
+%treated <- read.delim('~/work/hmec/h838/h838_treated_14922.dat', sep='|')
+%diff <- read.delim('~/work/hmec/h838/h838_diff_14922.dat', sep='|')
+%symbol <- diff$Gene
+%diff <- rowMeans(diff[,-1])
+%core <- cbind(ctrl[,-1], treated[,-1])
+%pval <- apply(core, 1, lrtest, tpoint, tpoint)
+%df <- data.frame(diff=diff, qval=p.adjust(pval,'BH'), symbol=symbol)
+%#comparison <- ddply(df, .(group), function(df) data.frame(text=sprintf("upregulated in CFU-E: %d        upregulated in BaF3-EpoR: %d", 
+%#    sum(df$diff<0&df$pval<0.05), sum(df$diff>0&df$pval<0.05))))
+%
+%print(ggplot(df,aes(diff,-log10(qval))) + 
+%    geom_point() + 
+%    #geom_text(aes(label=symbol),size=3,hjust=-0.2,alpha=0.3) + 
+%    #geom_text(data=comparison,aes(x=0,y=8,label=text),size=4) +
+%    geom_vline(aes(xintercept=0),colour='blue',linetype='dashed') +
+%    geom_hline(aes(yintercept=-log10(0.05)),colour='red',linetype='dashed') +
+%    xlab(expression(paste('Average ',log[2],' fold change (heterogeneous - homogeneous)'))) + 
+%    xlim(-1,1) + ylim(0,2.6) +
+%    ylab(expression(paste(-log[10],' ',italic(q),'-value'))) +
+%    opts(title='Full/reduced model fitting of\nH838 time course')
+%)
+%@
+%\end{center}
+%\caption{Summary of full/reduced model fit for all phosphatases. Negative $\log$
+%transformed $p\mhyphen$values are plotted against the average $\log_2$ fold
+%changes between BaF3 and CFU-E cells.}
+%\label{fig:fit_volcano}
+%\end{figure}
+
+% ----------------------------------------------------------------------------
+
+%\section{Cytokine array}
+%
+%\begin{figure}[ht]
+%\begin{center}
+%<<label=cytokine,echo=False,fig=True>>=
+%library(ggdendro)
+%dat <- read.delim('~/work/hmec/h838/cytokine_array.dat', sep='|', row.names=1)
+%df <- as.data.frame(t(rbind(log2(dat[2,]/dat[1,]), log2(dat[4,]/dat[3,]))))
+%names(df) <- c('H838.HPAEC','H838.H838')
+%df[is.nan(df[,1]),1] <- 0
+%df[is.nan(df[,2]),2] <- 0
+%df$name <- rownames(df)
+%df$name[1] <- 'GRO-alpha'
+%df$name[6] <- 'SDF-1-alpha'
+%df$name[23] <- 'TNF-alpha'
+%#df.label <- df$name[df$H838.HPAEC>df$H838.H838]
+%#df.label <- c(df.label, 'VEGF')
+%df.label <- df$name
+%print(ggplot(df,aes(H838.H838,H838.HPAEC)) + 
+%    geom_point() + geom_abline(intercept=0,slope=1,linetype='dashed') +
+%    geom_segment(data=data.frame(x=0,y=-4,xend=0,yend=0),
+%        aes(x,y,xend=xend,yend=yend),linetype='dashed',colour='blue') +
+%    geom_segment(data=data.frame(x=-4,y=0,xend=0,yend=0),
+%        aes(x,y,xend=xend,yend=yend),linetype='dashed',colour='blue') +
+%    geom_text(data=df[match(df.label,df$name),],aes(H838.H838,H838.HPAEC,
+%        label=name),hjust=-0.2,size=3,parse=T) +
+%    #geom_text(data=df[match('VEGF',df$name),],aes(H838.H838,H838.HPAEC,
+%    #    label=name),hjust=-0.2,size=3,colour='red') +
+%    xlab('H838 + H838') + ylab('H838 + HPAEC') + 
+%    xlim(-4,2) + ylim(-4,2) +
+%    opts(title=expression(paste(log[2],' normalized cytokine expression'))) 
+%)
+%@
+%\end{center}
+%\caption{Basal cytokine mRNA expression levels. Upper left:
+%the other replicate at 0h.}
+%\label{fig:raw}
+%\end{figure}
+
+% ----------------------------------------------------------------------------
+
+%\begin{figure}[ht]
+%\begin{center}
+%<<label=mono,echo=False,fig=True,width=8,height=4>>=
+%df1 <- data.frame(mean=c(164.6266555,    242.3984895, 206.705379,  166.7222301, 186.0556441, 159.6766093), exp=c('Control','Factor Group 1','TNFa','VEGF','Rantes','IL-6'), sd=c(21.20324556,    43.9110865,  33.28455182, 26.98885178, 29.58733858, 29.08766464), cond=rep('Experiment 1',6))
+%df1 <- within(df1, exp <- factor(exp, levels = df1$exp))
+%with(df1, levels(exp))
+%df2 <- data.frame(mean=c(171.3736933, 217.7026949, 234.3290311, 188.225389,  191.9769698, 187.924612), exp=c('Control','Factor Group 2','SDF-1a','MCP-1','IL-8','Gro-a'), sd=c(31.15060737,   28.19990634, 31.91501786, 40.20281597, 33.48534817, 37.05511063), cond=rep('Experiment 2',6))
+%df2 <- within(df2, exp <- factor(exp, levels = df2$exp))
+%with(df2, levels(exp))
+%vplayout(1,2)
+%p <- ggplot(df1,aes(x=exp,y=mean)) +
+%    geom_bar(fill='gray',colour='black',stat='identity',width=0.5) + 
+%    geom_errorbar(aes(ymax=mean+sd,ymin=mean),width=0.5) + ylim(0,350) +
+%    xlab('') + ylab(expression(paste('Migration area at 24h (',mu,'m'^2,')'))) +
+%    opts(axis.text.x=theme_text(angle=45))
+%print(p, vp=subplot(1,1))
+%p <- ggplot(df2,aes(x=exp,y=mean)) +
+%    geom_bar(fill='gray',colour='black',stat='identity',width=0.5) + 
+%    geom_errorbar(aes(ymax=mean+sd,ymin=mean),width=0.5) + 
+%    xlab('') + ylab('') + ylim(0,350) +
+%    opts(axis.text.x=theme_text(angle=45))
+%print(p, vp=subplot(1,2))
+%@
+%\end{center}
+%\caption{Basal cytokine mRNA expression levels. Upper left:
+%the other replicate at 0h.}
+%\label{fig:raw}
+%\end{figure}
+
+% ----------------------------------------------------------------------------
+
+%\begin{figure}[ht]
+%\begin{center}
+%<<label=polar,echo=False,fig=True>>=
+%dist <- read.delim('~/code/svn/MicroarrayAnalysis/trunk/python/tf_d_il8.dat', header=F)
+%df <- transform(dist,x=1:nrow(dist),y=rep(0,nrow(dist)))
+%print(ggplot(df,aes(x=V1,y=y)) +
+%    geom_segment(aes(xend=V1,yend=1/V2)) + coord_polar() +
+%    xlab('') + ylab('1 / shortest path length') +
+%    #scale_y_reverse() +
+%    ylim(0,1) +
+%    opts(title='IL8R',panel.border=theme_blank(),
+%      plot.title=theme_text(size=25))
+%)
+%@
+%\end{center}
+%\caption{Basal cytokine mRNA expression levels. Upper left:
+%the other replicate at 0h.}
+%\label{fig:raw}
+%\end{figure}
+
+% ----------------------------------------------------------------------------
+
+%\begin{figure}[ht]
+%\begin{center}
+%<<label=ts,echo=False,fig=True>>=
+%ctrl <- read.delim('~/work/hmec/h838/h838_ctrl_14922.dat',sep='|')
+%treated <- read.delim('~/work/hmec/h838/h838_treated_14922.dat',sep='|')
+%diff <- treated[,-1] - ctrl[,-1]
+%idx <- order(rowMeans(abs(diff)),decreasing=T)
+%time.points <- c(0,0.5,1,2,3,4,5,10,15,24)
+%diff$Gene <- ctrl$Gene
+%df <- melt(diff[idx[1:500],], id.vars='Gene')
+%df$variable <- rep(time.points, each=500)
+%tmin <- 0
+%tmax <- 4
+%df.shade <- data.frame(x=c(tmin,tmax),ymin=c(-2,-2),ymax=c(2,2))
+%print(ggplot(df.shade,aes(x)) + 
+%    geom_ribbon(aes(ymin=ymin,ymax=ymax),alpha=0.2) +
+%    geom_point(data=df,aes(variable,value,group=Gene),alpha=0.3) + 
+%    geom_line(data=df,aes(variable,value,group=Gene),alpha=0.3) + xlab('Time (h)') + 
+%    ylab(expression(paste(log[2],' fold expression'))) +
+%    opts(title=paste('Gene expression',tmin,'-',tmax,'h of H838\n(in coculture with HPAEC vs. H838)\n'))
+%)
+%@
+%\end{center}
+%\caption{Basal cytokine mRNA expression levels. Upper left:
+%the other replicate at 0h.}
+%\label{fig:raw}
+%\end{figure}
+
+% ----------------------------------------------------------------------------
+
+%\begin{figure}[ht]
+%\begin{center}
+%<<label=ts,echo=False,fig=True,width=8,height=5>>=
+%ctrl <- read.delim('~/work/hmec/h838/h838_ctrl_14922.dat',sep='|')
+%treated <- read.delim('~/work/hmec/h838/h838_treated_14922.dat',sep='|')
+%goi <- c('TNF','CXCL12')
+%idx <- match(goi,ctrl$Gene)
+%time.points <- c(0,0.5,1,2,3,4,5,10,15,24)
+%df.ctrl <- melt(ctrl[idx,], id.vars='Gene')
+%df.ctrl$variable <- rep(time.points, each=length(idx))
+%df.ctrl$cond <- rep('homogeneous',nrow(df.ctrl))
+%df.treated <- melt(treated[idx,], id.vars='Gene')
+%df.treated$variable <- rep(time.points, each=length(idx))
+%df.treated$cond <- rep('heterogeneous',nrow(df.treated))
+%df <- rbind(df.ctrl,df.treated)
+%df <- within(df, Gene <- factor(Gene, levels = goi))
+%with(df, levels(Gene))
+%df <- within(df, cond <- factor(cond, levels = c('heterogeneous','homogeneous')))
+%with(df, levels(cond))
+%levels(df$cond) <- c('H838 + HPAEC','H838 + H838')
+%p <- ggplot(df,aes(variable,value,linetype=cond)) + 
+%    geom_point() + scale_colour_brewer(palette='Set1') +
+%    scale_linetype_discrete('') +
+%    geom_line() + facet_wrap(~Gene) + xlab('Time (h)') + 
+%    ylab(expression(paste(log[2],' fold expression'))) + ylim(-1,3) +
+%    opts(title='Gene expression time course of H838\n',legend.position=c(0.85,0.9),
+%        legend.key=theme_blank())
+%
+%grob <- ggplotGrob(p)
+%strip_elem <- grid.ls(getGrob(grob, "strip.text.x", grep=TRUE, global=TRUE))$name
+%
+%grob <- editGrob(grob, strip_elem[1], label=expression(paste('TNF-',alpha)))
+%grob <- editGrob(grob, strip_elem[2], label=expression(paste('SDF-1',alpha)))
+%
+%grid.draw(grob)
+%@
+%\end{center}
+%\caption{Basal cytokine mRNA expression levels. Upper left:
+%the other replicate at 0h.}
+%\label{fig:raw}
+%\end{figure}
+
+% ----------------------------------------------------------------------------
+
+%\begin{figure}[ht]
+%\begin{center}
+%<<label=ts,echo=False,fig=True,width=8,height=5>>=
+%ctrl <- read.delim('~/work/hmec/h838/h838_ctrl_14922.dat',sep='|')
+%treated <- read.delim('~/work/hmec/h838/h838_treated_14922.dat',sep='|')
+%#goi <- c('^IL[0-9]+R','^TNFR','^CXCR','^CCR')
+%#genes <- c('IL-Rs','TNFRs','CXCRs','CCRs')
+%goi <- c('^IL[0-9]+$','^TNF[^R]','^CXCL','^CCL')
+%genes <- c('ILs','TNFs','CXCLs','CCLs')
+%time.points <- c(0,0.5,1,2,3,4,5,10,15,24)
+%df <- NULL
+%for (i in 1:length(goi)) {
+%    idx <- grep(goi[i],ctrl$Gene)
+%    tmp <- data.frame(tp=time.points,mean=colMeans(ctrl[idx,-1]),
+%        sd=apply(ctrl[idx,-1],2,sd),gene=rep(genes[i],length(time.points)),
+%        cond=rep('homogeneous',length(time.points)))
+%    df <- rbind(df,tmp)
+%    tmp <- data.frame(tp=time.points,mean=colMeans(treated[idx,-1]),
+%        sd=apply(treated[idx,-1],2,sd),gene=rep(genes[i],length(time.points)),
+%        cond=rep('heterogeneous',length(time.points)))
+%    df <- rbind(df,tmp)
+%}
+%df <- within(df, cond <- factor(cond, levels = c('homogeneous','heterogeneous')))
+%with(df, levels(cond))
+%levels(df$cond) <- c('H838 + H838','H838 + HPAEC')
+%print(ggplot(df,aes(tp,mean)) + 
+%    geom_ribbon(aes(ymin=mean-sd,ymax=mean+sd),
+%      fill='gray',colour='gray') + 
+%    geom_point() + scale_colour_brewer(palette='Set1') +
+%    geom_line(aes(colour=cond)) + 
+%    facet_grid(cond~gene) + xlab('Time (h)') + 
+%    ylim(-1,3) +
+%    ylab(expression(paste(log[2],' fold expression'))) +
+%    opts(title='Gene expression time course of H838\n',legend.position='none')
+%)
+%@
+%\end{center}
+%\caption{Basal cytokine mRNA expression levels. Upper left:
+%the other replicate at 0h.}
+%\label{fig:raw}
+%\end{figure}
+
+% ----------------------------------------------------------------------------
+
+%\begin{figure}[ht]
+%\begin{center}
+%<<echo=False,fig=True>>=
+%dat <- dat[,-1]
+%hc <- hclust(log10(dist(t(dat))), "ave")
+%dhc <- as.dendrogram(hc)
+%# Rectangular lines
+%ddata <- dendro_data(dhc, type="rectangle")
+%print(ggplot(segment(ddata)) +
+%    geom_segment(aes(x=x0, y=y0, xend=x1, yend=y1)) +
+%    scale_x_continuous(breaks=1:ncol(dat), labels=names(dat)[hc$order]) + 
+%    xlab('') + ylab('Kullback-Leibler divergence') +
+%    opts(panel.border=theme_blank(), 
+%        axis.text.x=theme_text(angle=20,size=fontsize),
+%        axis.title.y=theme_text(angle=90,hjust=0.5,vjust=0.3,,size=fontsize))
+%)
+%@
+%\end{center}
+%\caption{Basal cytokine mRNA expression levels. Upper left:
+%the other replicate at 0h.}
+%\label{fig:clust}
+%\end{figure}
+
+\end{document}
