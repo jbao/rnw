@@ -43,11 +43,17 @@ library(gplots)
 library(plotrix)
 library(org.Hs.eg.db)
 library(gage)
+library(hdf5)
+library(igraph)
+library(doMC)
+library(plyr)
+library(pracma)
 library(devtools)
-load_all('~/code/github/util')
+load_all('~/tool/util')
 
 fontsize <- 15
 theme_set(theme_bw(fontsize))
+registerDoMC()
 
 subplot <- function(x, y) viewport(layout.pos.row=x, layout.pos.col=y) 
 vplayout <- function(x, y) {
@@ -56,7 +62,7 @@ vplayout <- function(x, y) {
 }
 @
 
-<<label=data,echo=False,fig=FALSE,cache=True>>=
+<<label=data,echo=False,fig=FALSE,cache=True,eval=False>>=
 wd <- '/Users/bao/work/hmec/h838/'
 dat <- read.table(paste(wd,"all.qnorm.txt",sep=""),sep="\t",header=T,
     quote="\"",comment.char="")
@@ -152,17 +158,17 @@ print(tbl, tabular.environment = "longtable",
 
 % ----------------------------------------------------------------------------
 
-<<label=enrichment,echo=False,fig=False,cache=True>>=
+<<label=enrichment,echo=False,fig=True,cache=True,eval=False>>=
 #mSigDB <- readLines("~/work/MSigDB/c2.all.v3.0.symbols.gmt")
-mSigDB <- readLines("~/code/R/GSEA-P-R/c3.tft.v3.0.symbols.gmt")
+mSigDB <- readLines("~/MicroarrayAnalysis/trunk/r/c3.tft.v3.0.symbols.gmt")
 mSigDB <- strsplit(mSigDB, "\t")
 names(mSigDB) <- sapply(mSigDB, function(x) x[1])
 mSigDB <- sapply(mSigDB, function(x) x[3:length(x)])
 
 tpoint <- c(0.5,1:5,10,15,24)
-ctrl <- read.delim('~/work/hmec/h838/h838_ctrl_14922.dat', sep='|')
-treated <- read.delim('~/work/hmec/h838/h838_treated_14922.dat', sep='|')
-diff <- read.delim('~/work/hmec/h838/h838_diff_14922.dat', sep='|')
+ctrl <- read.delim('~/data/hpaec/h838_ctrl_14922.dat', sep='|')
+treated <- read.delim('~/data/hpaec/h838_treated_14922.dat', sep='|')
+diff <- read.delim('~/data/hpaec/h838_diff_14922.dat', sep='|')
 all <- NULL
 threshold <- 0.9465
 for (i in 1:length(tpoint)) {
@@ -185,50 +191,327 @@ for (i in 1:length(tpoint)) {
     #    common <- intersect(common, rownames(current)[idx])
 }
 
-final <- matrix(0,length(common),length(tpoint))
-for (j in 1:length(tpoint)) {
-    for (i in 1:length(common)) {
-        final[i,j] = all.path[[j]]$q.val[rownames(all.path[[j]])==common[i]]
-    }
-}
-list(common=common, final=final)
+#final <- matrix(0,length(common),length(tpoint))
+#for (j in 1:length(tpoint)) {
+#    for (i in 1:length(common)) {
+#        final[i,j] = all.path[[j]]$q.val[rownames(all.path[[j]])==common[i]]
+#    }
+#}
+#list(common=common, final=final)
+all$label <- rownames(all)
+all <- all[-grep('UNKNOWN',all$label),]
+print(ggplot(all,aes(stat.mean,-log10(p.val))) + 
+    geom_point(aes(size=set.size)) + 
+    facet_wrap(~time) +
+    geom_text(aes(label=label),size=2,hjust=-0.1,alpha=0.5) + 
+    #geom_vline(aes(xintercept=0),colour='blue',linetype='dashed') +
+    #geom_hline(aes(yintercept=-log10(0.05)),colour='red',linetype='dashed') +
+    #xlab(expression(paste('Average ',log[2],' fold change (heterogeneous - homogeneous)'))) + 
+    xlim(1.5,4) #+ ylim(0,2.6) +
+    #ylab(expression(paste(-log[10],' ',italic(q),'-value'))) +
+    #opts(title='Full/reduced model fitting of\nH838 time course')
+)
 @
 
 % ----------------------------------------------------------------------------
 
-%\begin{figure}[ht]
-%\begin{center}
-%<<label=fit_volcano,echo=False,fig=True,width=7,height=7>>=
-%tpoint <- c(0,0.5,1:5,10,15,24)
-%ctrl <- read.delim('~/work/hmec/h838/h838_ctrl_14922.dat', sep='|')
-%treated <- read.delim('~/work/hmec/h838/h838_treated_14922.dat', sep='|')
-%diff <- read.delim('~/work/hmec/h838/h838_diff_14922.dat', sep='|')
-%symbol <- diff$Gene
-%diff <- rowMeans(diff[,-1])
-%core <- cbind(ctrl[,-1], treated[,-1])
-%pval <- apply(core, 1, lrtest, tpoint, tpoint)
-%df <- data.frame(diff=diff, qval=p.adjust(pval,'BH'), symbol=symbol)
-%#comparison <- ddply(df, .(group), function(df) data.frame(text=sprintf("upregulated in CFU-E: %d        upregulated in BaF3-EpoR: %d", 
-%#    sum(df$diff<0&df$pval<0.05), sum(df$diff>0&df$pval<0.05))))
-%
-%print(ggplot(df,aes(diff,-log10(qval))) + 
-%    geom_point() + 
-%    #geom_text(aes(label=symbol),size=3,hjust=-0.2,alpha=0.3) + 
-%    #geom_text(data=comparison,aes(x=0,y=8,label=text),size=4) +
-%    geom_vline(aes(xintercept=0),colour='blue',linetype='dashed') +
-%    geom_hline(aes(yintercept=-log10(0.05)),colour='red',linetype='dashed') +
-%    xlab(expression(paste('Average ',log[2],' fold change (heterogeneous - homogeneous)'))) + 
-%    xlim(-1,1) + ylim(0,2.6) +
-%    ylab(expression(paste(-log[10],' ',italic(q),'-value'))) +
-%    opts(title='Full/reduced model fitting of\nH838 time course')
-%)
-%@
-%\end{center}
-%\caption{Summary of full/reduced model fit for all phosphatases. Negative $\log$
-%transformed $p\mhyphen$values are plotted against the average $\log_2$ fold
-%changes between BaF3 and CFU-E cells.}
-%\label{fig:fit_volcano}
-%\end{figure}
+<<label=hppi,echo=False,fig=False,cache=True,eval=False>>=
+mat <- hdf5load('/home/jbao/data/network/hppi/hppi2-directed-MFPT.hdf5', load=F)
+map <- hdf5load('/home/jbao/data/network/hppi/hppi2_directed_map.hdf5', load=F)
+net <- read.graph('/home/jbao/data/network/hppi/hppi2_directed.xml', 'graphml')
+@
+
+% ----------------------------------------------------------------------------
+
+<<label=hippie,echo=False,fig=False,cache=True,eval=False>>=
+mat <- hdf5load('/home/jbao/data/network/hippie/HIPPIE-current_cutoff0-MFPT.hdf5', load=F)
+map <- hdf5load('/home/jbao/data/network/hippie/HIPPIE-current_cutoff0_map.hdf5', load=F)
+net <- read.graph('/home/jbao/data/network/hippie/HIPPIE-current_cutoff0.xml', 'graphml')
+@
+
+% ----------------------------------------------------------------------------
+
+<<label=tfbs_sig,echo=False,fig=False,cache=True,eval=False>>=
+tf.sig <- list(t2=c('JUN','FOS','SRY','NKX3-1','GATA6','NFE2','GATA1','SOX9',
+    'STAT4','NFY','EVI1','MYB$','^DBP'),
+    t3=c('POU3F2','PPARG$'),
+    t4=c('TP53$','PAX8','GATA1','LHX3','IRF1','PAX5','CEBPG','YY1$','ZIC1',
+    'IRF2','JUN','FOS','NFY'),
+    t5=c('SOX9','IRF1','E2F','YY1$','ELK1'),
+    t6=c('PAX3','YY1$','SRY','HSF1','E4F1','MYC$','MAX','HLF','ARNT$','GABP',
+    'E2F'),
+    t7=c('GABP'),
+    t8=c('E2F','IRF2','PAX3'),
+    t9=c('YY1$'),
+    t10=c('^NF1','IRF1'))
+tf.entrez <- NULL
+for (i in 1:length(tf.sig)) {
+    tf <- unlist(sapply(tf.sig[[i]], function(x) map$idmap$official[grep(x,map$idmap$official)]))
+    tf.entrez <- rbind(tf.entrez, data.frame(tf.entrez=map$idmap$entrez[match(tf,map$idmap$official)],time=tpoint[i]))
+}
+receptor <- read.delim('~/MicroarrayAnalysis/trunk/python/hsa04060.receptor', 
+    header=F)$V1
+map$idmap$official[map$idmap$official=='IL8RA'] <- 'CXCR1'
+#receptor.entrez <- unlist(mget(as.character(receptor), org.Hs.egSYMBOL2EG, 
+#    ifnotfound=NA))
+receptor.entrez <- map$idmap$entrez[match(receptor,map$idmap$official)]
+receptor.entrez <- receptor.entrez[receptor.entrez %in% map$idmap$entrez]
+tf.entrez <- tf.entrez[tf.entrez$tf.entrez %in% map$idmap$entrez,]
+#mfpt.sp <- NULL
+mfpt.sp <- foreach(i=1:length(receptor.entrez), .combine='rbind') %:%
+    foreach(j=1:nrow(tf.entrez), .combine='rbind') %dopar% {
+#for (i in 1:1) {
+#    for (j in 1:1) {
+        ii <- map$idmap$vertex[which(receptor.entrez[i] == map$idmap$entrez)] + 1
+        jj <- map$idmap$vertex[which(tf.entrez$tf.entrez[j] == map$idmap$entrez)] + 1
+        receptor.idx <- match(receptor.entrez[i], V(net)$gene)
+        tf.idx <- match(tf.entrez$tf.entrez[j], V(net)$gene)
+        sp <- shortest.paths(net, receptor.idx, tf.idx, weights=NA, mode='out') # BFS
+        tmp <- data.frame(mfpt=mat$mfpt[ii,jj], sp=as.numeric(sp),
+            #receptor=get(receptor.entrez[i], org.Hs.egSYMBOL),
+            receptor=map$idmap$official[which(receptor.entrez[i]==map$idmap$entrez)], 
+            tf=map$idmap$official[which(tf.entrez$tf.entrez[j]==map$idmap$entrez)], 
+            time=tf.entrez$time[j])
+        #mfpt.sp <- rbind(mfpt.sp, tmp)
+    #}
+}
+@
+
+% ----------------------------------------------------------------------------
+
+<<label=top_mfpt,echo=False,fig=True,width=8,height=8,eval=False>>=
+mfpt.sp <- mfpt.sp[-which(mfpt.sp$mfpt==-1),]
+df <- NULL
+for (t in levels(factor(mfpt.sp$time))) {
+    current <- subset(mfpt.sp, time==t)
+    res <- ddply(current, .(receptor), summarise, mean.mfpt=mean(mfpt), 
+        mean.sp=mean(sp))
+    res$time <- t
+    df <- rbind(df, res)
+}
+#group <- sub('IL1R.+','IL1R',df$receptor)
+#group <- sub('TNFR.+','TNFR',group)
+#df$group <- group
+#df2 <- NULL
+#for (t in levels(factor(df$time))) {
+#    current <- subset(df, time==t)
+#    res <- ddply(current, .(group), summarise, mean.mfpt=mean(mean.mfpt),
+#        mean.sp=mean(mean.sp))
+#    res$time <- t
+#    df2 <- rbind(df2, res)
+#}
+df.inv <- NULL
+for (t in levels(factor(df$time))) {
+    current <- subset(df, time==t)
+    #current$inv.mfpt <- (max(current$mean.mfpt)-current$mean.mfpt) / 
+    #    (max(current$mean.mfpt)-min(current$mean.mfpt))
+    #current$inv.sp <- (max(current$mean.sp)-current$mean.sp) / 
+    #    (max(current$mean.sp)-min(current$mean.sp))
+    current$inv.mfpt <- 1 / current$mean.mfpt
+    current$inv.sp <- 1 / current$mean.sp
+    df.inv <- rbind(df.inv, current)
+}
+df.inv$time <- as.numeric(df.inv$time)
+df4 <- ddply(df.inv, .(time), function(x) x[order(x$inv.mfpt,decreasing=T)[1:30],])
+df4 <- within(df4, time <- factor(time, 
+    levels = paste(tpoint,'h')))
+with(df4, levels(time))
+df4$type <- '0'
+df4$type[grep('EDA2R',df4$group)] <- '1'
+df4$type[grep('IFNGR1',df4$group)] <- '2'
+df4$type[grep('IFNAR2',df4$group)] <- '3'
+
+print(ggplot(df4,aes(receptor,0)) + #geom_point() +
+    #scale_colour_manual(values=c('black','red','blue','green')) +
+    geom_segment(aes(xend=receptor,yend=inv.mfpt)) + coord_polar() +
+    facet_wrap(~time,scales='free_x') +
+    #geom_text(aes(label=V1),hjust=-0.2,alpha=0.3,size=2) +
+    labs(x='',y='Normalized inverse MFPT',title='HIPPIE') + 
+    #ylim(0,1.1) #+
+    opts(axis.text.x=theme_text(size=4),legend.position='none')
+)
+#mfpt <- NULL
+#sp <- NULL
+#for (t in levels(mfpt.sp$tf)) {
+#    current <- subset(mfpt.sp, tf==t)
+#    mfpt.z <- Re((current$mfpt - median(current$mfpt)) / (IQR(current$mfpt)
+#        /(2*sqrt(2)*erfc(0.5))))
+#    sp.z <- Re((current$sp - median(current$sp)) / (IQR(current$sp)
+#        /(2*sqrt(2)*erfc(0.5))))
+#    mfpt <- cbind(mfpt, mfpt.z)
+#    sp <- cbind(sp, sp.z)
+#}
+#mfpt <- as.data.frame(mfpt)
+#names(mfpt) <- levels(mfpt.sp$tf)
+#mfpt$receptor <- current$receptor
+#mfpt$metric <- 'MFPT'
+#sp <- as.data.frame(sp)
+#names(sp) <- levels(mfpt.sp$tf)
+#sp$receptor <- current$receptor
+#sp$metric <- 'SP'
+#print(ggplot(rbind(mfpt,sp),aes(CEBPD,RELB)) + geom_point() +
+#    #scale_colour_manual(values=c('black','red','blue','green')) +
+#    #geom_segment(aes(xend=receptor,yend=mfpt.z)) + coord_polar() +
+#    #geom_bar() +
+#    facet_wrap(~metric,scales='free_x') +
+#    geom_text(aes(label=receptor),hjust=-0.2,alpha=0.3,size=2) +
+#    geom_abline(intercept=0,slope=1,colour='red',linetype='dashed') +
+#    xlab('CEBPD') + ylab('RELB') +
+#    #ylab('Normalized inverse MFPT') +
+#    #ylab('Normalized inverse shortest path') +
+#    xlim(-35,15) #+
+#    #opts(axis.text.x=theme_text(size=4),legend.position='none')
+#)
+@
+
+% ----------------------------------------------------------------------------
+
+<<label=sp_bootstrap,echo=False,fig=False,cache=True,eval=False>>=
+tf <- read.delim('~/data/tf/tf_table_final.csv', sep=';')
+sp.bootstrap <- NULL
+unique.receptor <- unique(mfpt.sp$receptor)
+get.sp <- function(receptor, tf) {
+    tf.entrez <- map$idmap$entrez[which(map$idmap$official==tf)]
+    tf.idx <- match(tf.entrez, V(net)$gene)
+    sp <- shortest.paths(net, receptor.idx, tf.idx, 
+        weights=NA, mode='out') # BFS
+}
+tf.num <- nrow(subset(mfpt.sp,receptor==unique.receptor[1]))
+tf.pool <- intersect(tf$Gene_Abbrev,map$idmap$official)
+receptor.entrez <- map$idmap$entrez[match(unique.receptor,map$idmap$official)]
+receptor.idx <- match(receptor.entrez, V(net)$gene)
+tf.entrez <- map$idmap$entrez[match(tf.pool,map$idmap$official)]
+tf.idx <- match(tf.entrez, V(net)$gene)
+sp.mat <- shortest.paths(net, receptor.idx, tf.idx, weights=NA, mode='out')
+tf.access <- colnames(sp.mat)[is.finite(colMeans(sp.mat))]
+#sp.all <- NULL
+#for (k in 1:1) {
+sp.bootstrap.all <- foreach(k=1:1000, .combine='cbind') %dopar% {
+    tf.bootstrap <- sample(tf.access, tf.num)
+    mfpt.sp$tf.bootstrap <- tf.bootstrap
+    sp.bootstrap <- NULL
+    for (i in 1:length(unique.receptor)) {
+        receptor.entrez <- map$idmap$entrez[which(map$idmap$official==
+            unique.receptor[i])]
+        receptor.idx <- match(receptor.entrez, V(net)$gene)
+        sp.all <- shortest.paths(net, receptor.idx, weights=NA, mode='out')
+        sp.bootstrap <- c(sp.bootstrap, sp.all[,tf.bootstrap])
+    }
+    mfpt.sp$sp.bootstrap <- sp.bootstrap
+    df <- NULL
+    for (t in levels(factor(mfpt.sp$time))) {
+        current <- subset(mfpt.sp, time==t)
+        res <- ddply(current, .(receptor), summarise, mean.sp=mean(sp.bootstrap))
+        res$time <- t
+        df <- rbind(df, res)
+    }
+    df$time <- as.numeric(df$time)
+    df$inv.sp <- 1 / df$mean.sp
+    df.integral.bootstrap <- ddply(df, .(receptor), function(x) trapz(sort(x$time),x$inv.sp[order(x$time)]))
+    df.integral.bootstrap$V1
+}
+df.integral <- ddply(df.inv, .(receptor), function(x) trapz(sort(x$time),x$inv.sp[order(x$time)]))
+df.integral$pval <- rowSums(df.integral$V1<sp.bootstrap.all) / 1000
+#mfpt.sp$sp.mean <- rowMeans(sp.bootstrap.all)
+#mfpt.sp$sp.sd <- rowSds(sp.bootstrap.all)
+#mfpt.sp$pval <- rowSums(mfpt.sp$sp>sp.bootstrap.all) / 1000
+##mfpt.sp <- subset(mfpt.sp, !is.infinite(sp.mean))
+#mfpt.sp$z <- (mfpt.sp$sp - mfpt.sp$sp.mean) / mfpt.sp$sp.sd
+#df.z <- NULL
+#for (t in levels(factor(mfpt.sp$time))) {
+#    current <- subset(mfpt.sp, time==t)
+#    res <- ddply(current, .(receptor), summarise, mean.z=mean(pval))
+#    res$time <- t
+#    df.z <- rbind(df.z, res)
+#}
+#df.z$time <- as.numeric(df.z$time)
+@
+
+% ----------------------------------------------------------------------------
+
+<<label=receptor_ts,echo=False,fig=True,width=10,height=4,eval=False>>=
+goi <- c('^IL[0-9]+R','^TNFR','^CXCR','^CCR')
+genes <- c('ILRs','TNFRs','CXCRs','CCRs')
+#goi <- c('TNFRSF1[AB]','KDR','CCR[135]','IL6R','CXCR4','IL8R[AB]','IL8RB')
+#genes <- c('TNF','VEGF','CCL5','IL6','SDF-1a','IL8','CXCL1')
+#df <- ddply(df.inv, .(receptor), function(x) trapz(sort(x$time),x$inv.sp[order(x$time)]))
+#df <- ddply(df.z, .(receptor), function(x) trapz(sort(x$time),-log10(x$mean.z[order(x$time)])))
+df <- df.integral
+df$group <- 'Other'
+df$group.num <- '0'
+for (i in 1:length(goi)) {
+    df$group[grep(goi[i],df$receptor)] <- genes[i]
+    df$group.num[grep(goi[i],df$receptor)] <- as.character(5 - i)
+}
+df <- df[order(df$group.num,df$V1,decreasing=T),]
+df <- within(df, receptor <- factor(receptor, 
+    levels = df$receptor))
+df <- within(df, group <- factor(group, 
+    levels = df$group))
+
+print(ggplot(df,aes(receptor,V1-2.5,fill=group)) + 
+#print(ggplot(df,aes(receptor,-log10(pval))) + 
+    #geom_point(aes(colour=receptor)) + geom_line(aes(colour=receptor)) +
+    geom_bar(colour='black') +
+    scale_fill_brewer('',palette='Set1') +
+    scale_y_continuous(breaks=seq(0,8,2),labels=seq(0,8,2)+2.5) +
+    #geom_hline(yintercept=-log10(0.05),colour='red',linetype='dashed') +
+    #facet_wrap(~group,scales='free_x') +
+    guides(fill=guide_legend(nrow=1)) +
+    #labs(x='Receptors',y=expression(paste(-log[10]~'p-value')),
+    #    title='Inverse SP after bootstrapping\n') +
+    labs(x='Receptors',y='AUC',title='Inverse SP\n') +
+    theme(axis.text.x=element_text(angle=90,size=6),legend.position=c(0.82,1),
+        legend.background=element_blank(),legend.key.size=unit(0.2,'cm'))
+)
+@
+
+% ----------------------------------------------------------------------------
+
+<<label=fit_ex,echo=False,fig=True,eval=False>>=
+goi <- 'IL6R'
+ctrl.df <- list(dat=ctrl[which(ctrl$Gene==goi),], cond='homo', 
+    tpoint=c(0,tpoint))
+treated.df <- list(dat=treated[which(treated$Gene==goi),], cond='hetero', 
+    tpoint=c(0,tpoint))
+df.ex <- plot.full.reduced.example(ctrl.df, treated.df, goi)
+@
+
+% ----------------------------------------------------------------------------
+
+\begin{figure}[ht]
+\begin{center}
+<<label=fit_volcano,echo=False,fig=True,width=7,height=7>>=
+tpoint <- c(0,0.5,1:5,10,15,24)
+ctrl <- read.delim('~/work/hmec/h838/h838_ctrl_14922.dat', sep='|')
+treated <- read.delim('~/work/hmec/h838/h838_treated_14922.dat', sep='|')
+diff <- read.delim('~/work/hmec/h838/h838_diff_14922.dat', sep='|')
+symbol <- diff$Gene
+diff <- rowMeans(diff[,-1])
+core <- cbind(ctrl[,-1], treated[,-1])
+pval <- apply(core, 1, lrtest, tpoint, tpoint)
+#df <- data.frame(diff=diff, qval=p.adjust(pval,'BH'), symbol=symbol)
+#comparison <- ddply(df, .(group), function(df) data.frame(text=sprintf("upregulated in CFU-E: %d        upregulated in BaF3-EpoR: %d", 
+#    sum(df$diff<0&df$pval<0.05), sum(df$diff>0&df$pval<0.05))))
+
+#print(ggplot(df,aes(diff,-log10(qval))) + 
+#    geom_point() + 
+#    #geom_text(aes(label=symbol),size=3,hjust=-0.2,alpha=0.3) + 
+#    #geom_text(data=comparison,aes(x=0,y=8,label=text),size=4) +
+#    geom_vline(aes(xintercept=0),colour='blue',linetype='dashed') +
+#    geom_hline(aes(yintercept=-log10(0.05)),colour='red',linetype='dashed') +
+#    xlab(expression(paste('Average ',log[2],' fold change (heterogeneous - homogeneous)'))) + 
+#    xlim(-1,1) + ylim(0,2.6) +
+#    ylab(expression(paste(-log[10],' ',italic(q),'-value'))) +
+#    opts(title='Full/reduced model fitting of\nH838 time course')
+#)
+@
+\end{center}
+\caption{Summary of full/reduced model fit for all phosphatases. Negative $\log$
+transformed $p\mhyphen$values are plotted against the average $\log_2$ fold
+changes between BaF3 and CFU-E cells.}
+\label{fig:fit_volcano}
+\end{figure}
 
 % ----------------------------------------------------------------------------
 
