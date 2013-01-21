@@ -66,7 +66,7 @@ vplayout <- function(x, y) {
 }
 @
 
-<<label=filter,echo=False,fig=FALSE,cache=True,eval=True>>=
+<<label=filter,echo=False,fig=FALSE,cache=True,eval=False>>=
 fname <- '~/data/hdf/all.qnorm.txt'
 dat <- read.delim(fname, sep="|")
 
@@ -113,7 +113,7 @@ write.table(ts, paste('~/data/hdf/hdf_ctrl_',nrow(ts),'.tsv',sep=''), quote=F,
 
 % ----------------------------------------------------------------------------
 
-<<label=logistic,echo=False,fig=False,eval=True>>=
+<<label=logistic,echo=False,fig=False,eval=False>>=
 # logistic fit
 library(minpack.lm)
 ## values over which to simulate data
@@ -293,14 +293,14 @@ human.map <- hdf5load('../RandomWalk/biogrid/BIOGRID-ORGANISM-Homo_sapiens-3.1.8
 
 % ----------------------------------------------------------------------------
 
-<<label=hppi,echo=False,fig=False,cache=True,eval=True>>=
+<<label=hppi,echo=False,fig=False,cache=True,eval=False>>=
 hppi <- hdf5load('/home/jbao/data/network/hppi/hppi2-directed-MFPT.hdf5', load=F)
 hppi.map <- hdf5load('/home/jbao/data/network/hppi/hppi2_directed_map.hdf5', load=F)
 @
 
 % ----------------------------------------------------------------------------
 
-<<label=hippie,echo=False,fig=False,cache=True,eval=True>>=
+<<label=hippie,echo=False,fig=False,cache=True,eval=False>>=
 #hippie <- hdf5load('/home/jbao/data/network/hippie/HIPPIE-current-MFPT.hdf5', load=F)
 #hippie.map <- hdf5load('/home/jbao/data/network/hippie/HIPPIE-current.mitab.txt.hdf5', load=F)
 hippie <- hdf5load('/home/jbao/data/network/hippie/HIPPIE-current_cutoff0-MFPT.hdf5', load=F)
@@ -350,7 +350,7 @@ hippie.net <- read.graph('/home/jbao/data/network/hippie/HIPPIE-current_cutoff0.
 
 % ----------------------------------------------------------------------------
 
-<<label=tfbs,echo=False,fig=False,cache=True,eval=True>>=
+<<label=tfbs,echo=False,fig=False,cache=True,eval=False>>=
 # GAGE
 library(gage)
 data(kegg.gs)
@@ -464,9 +464,9 @@ mfpt.sp <- foreach(i=1:length(receptor.entrez), .combine='rbind') %:%
 
 % ----------------------------------------------------------------------------
 
-\begin{figure}[ht]
-\centering
-<<label=top_mfpt,echo=False,fig=True,eval=True,width=8,height=5>>=
+%\begin{figure}[ht]
+%\centering
+<<label=top_mfpt,echo=False,fig=True,width=8,height=5,eval=False>>=
 #sp.reduced <- read.delim('~/data/network/hppi/hppi_reduced_sp.tsv', header=F)
 #get.mfpt <- function(source, target) {
 #    if (source %in% hippie.map$idmap$entrez & target %in% hippie.map$idmap$entrez) {
@@ -587,18 +587,18 @@ print(ggplot(rbind(mfpt,sp),aes(CEBPD,RELB)) + geom_point() +
     #opts(axis.text.x=theme_text(size=4),legend.position='none')
 )
 @
-\caption{Example of the differential time series analysis using the 
-full/reduced model fitting (Mar and Quackenbush \emph{PLoS Comput Biol} 2009). 
-Gene expression time course from 2 conditions
-are fitted with a cubic polynomial either together (reduced model, dot-dashed 
-line) or separately (full model, dashed line). The deviances of the 2 model 
-fits are compared using the ANOVA test and a $p\mhyphen$value is generated,
-which compares the goodness-of-fit of both model fits and 
-implies the probability that this gene is differentially expressed under
-the 2 given conditions (equivalent to the alternative hypothesis that
-the full model fits the data better).}
-\label{fig:fit_ex}
-\end{figure}
+%\caption{Example of the differential time series analysis using the 
+%full/reduced model fitting (Mar and Quackenbush \emph{PLoS Comput Biol} 2009). 
+%Gene expression time course from 2 conditions
+%are fitted with a cubic polynomial either together (reduced model, dot-dashed 
+%line) or separately (full model, dashed line). The deviances of the 2 model 
+%fits are compared using the ANOVA test and a $p\mhyphen$value is generated,
+%which compares the goodness-of-fit of both model fits and 
+%implies the probability that this gene is differentially expressed under
+%the 2 given conditions (equivalent to the alternative hypothesis that
+%the full model fits the data better).}
+%\label{fig:fit_ex}
+%\end{figure}
 
 % ----------------------------------------------------------------------------
 
@@ -651,9 +651,9 @@ qval <- p.adjust(pval, 'BH')
 
 % ----------------------------------------------------------------------------
 
-\begin{figure}[ht]
-\centering
-<<label=fit_ex,echo=False,fig=True,eval=True,width=7,height=7>>=
+%\begin{figure}[ht]
+%\centering
+<<label=fit_ex,echo=False,fig=True,width=7,height=7,eval=True>>=
 #idx <- symbol == 'CEBPD'
 #idx <- grep('CEBPD|RELB|BHLHB5', symbol)
 #ctrl$cond <- 'Control'
@@ -707,22 +707,57 @@ qval <- p.adjust(pval, 'BH')
 #    xlab('Time (h)') + ylab(expression(paste(log[2],' fold expression'))) 
 #print(p+opts(legend.position=c(0.9,0.9),legend.key=theme_blank()))
 #    #title='CEBPD\n'))
-treated.df <- list(dat=treated[which(treated$Gene=='CEBPD'),], cond='NHK', 
+treated <- read.delim('~/data/hdf/hdf_nhk_16091.tsv')
+treated.tpoint <- c(0,1,2,3,4,6,8,10,12,18,24)
+treated.df <- list(dat=treated[which(treated$Gene=='CCL5'),], cond='NHK', 
     tpoint=treated.tpoint)
-df.ex <- plot.logistic.example(treated.df, 'CEBPD')
+#df.ex <- plot.logistic.example(treated.df, 'CCL5')
+symbol <- treated.df$dat$Gene
+df.treated <- melt(treated.df$dat)
+df.treated <- transform(df.treated, cond=treated.df$cond)
+df.treated <- transform(df.treated, time=treated.df$tpoint)
+df <- df.treated
+
+# logistic fit
+idx.treated <- which(names(treated.df$dat)=='Gene')
+fit.treated <- apply(treated.df$dat[,-idx.treated],1,function(x) fit.logistic(treated.df$tpoint,x))
+colnames(fit.treated) <- symbol
+
+# get upregulation time
+nfit <- 100
+xfit <- seq(0,max(treated.df$tpoint),length=nfit)
+df.param <- apply(fit.treated,2,function(x)xfit[which.max(abs(diff(x)/diff(xfit)))])
+df.param <- melt(df.param)
+df.param <- transform(df.param, Gene=symbol, 
+    label=sprintf("t==%.1e",df.param$value))
+
+fit.treated <- transform(fit.treated, time=xfit)
+fit.treated <- melt(fit.treated, id.vars='time')
+fit.treated <- transform(fit.treated, Gene=rep(symbol, each=nfit))
+
+print(ggplot(df, aes(time,value)) + geom_point(aes(colour=cond)) + 
+    geom_line(aes(colour=cond)) + 
+    geom_line(data=fit.treated,aes(time,value),linetype='dashed') +
+    geom_text(data=df.param, aes(x=1,y=3,label=label),size=5,parse=T) +
+    scale_colour_brewer('',palette='Set1') +
+    #ylim(floor(min(df$value)),ceiling(max(df$value))) +
+    labs(x='time (h)',y=expression(paste(log[2]~'fold expression')),
+        title='CCL5\n') +
+    theme(legend.position=c(0.9,0.9),legend.key=element_blank())
+)
 @
-\caption{Example of the differential time series analysis using the 
-full/reduced model fitting (Mar and Quackenbush \emph{PLoS Comput Biol} 2009). 
-Gene expression time course from 2 conditions
-are fitted with a cubic polynomial either together (reduced model, dot-dashed 
-line) or separately (full model, dashed line). The deviances of the 2 model 
-fits are compared using the ANOVA test and a $p\mhyphen$value is generated,
-which compares the goodness-of-fit of both model fits and 
-implies the probability that this gene is differentially expressed under
-the 2 given conditions (equivalent to the alternative hypothesis that
-the full model fits the data better).}
-\label{fig:fit_ex}
-\end{figure}
+%\caption{Example of the differential time series analysis using the 
+%full/reduced model fitting (Mar and Quackenbush \emph{PLoS Comput Biol} 2009). 
+%Gene expression time course from 2 conditions
+%are fitted with a cubic polynomial either together (reduced model, dot-dashed 
+%line) or separately (full model, dashed line). The deviances of the 2 model 
+%fits are compared using the ANOVA test and a $p\mhyphen$value is generated,
+%which compares the goodness-of-fit of both model fits and 
+%implies the probability that this gene is differentially expressed under
+%the 2 given conditions (equivalent to the alternative hypothesis that
+%the full model fits the data better).}
+%\label{fig:fit_ex}
+%\end{figure}
 
 % ----------------------------------------------------------------------------
 
@@ -902,7 +937,7 @@ print(ggplot(df,aes(diff.mean,-log10(qval))) +
 
 % ----------------------------------------------------------------------------
 
-<<label=tf_seq,echo=False,fig=False,eval=True>>=
+<<label=tf_seq,echo=False,fig=False,eval=False>>=
 #tf.sig <- as.vector(unique(df$gene[df$diff>0&df$qval<0.01]))
 #i <- which(tf.sig=='BHLHB5')
 #tf.sig[i] <- 'BHLHE22'
@@ -944,14 +979,14 @@ for (i in 1:length(idx)) {
 
 % ----------------------------------------------------------------------------
 
-<<label=tf_ts,echo=False,fig=True,eval=False>>=
-#idx <- na.omit(match(tf$Gene_Abbrev,treated$Gene))
+<<label=tf_ts,echo=False,fig=True,eval=True>>=
+idx <- na.omit(match(tf$Gene_Abbrev,treated$Gene))
 ##stop()
-#core <- cbind(ctrl[idx,-1], treated[idx,-1])
-#pval <- apply(core,1,lrtest)
-#qval <- p.adjust(pval, 'BH')
-##diff <- rowMeans(diff[idx,-1])
-##df <- data.frame(qval=qval,gene=ctrl$Gene[idx],diff=diff)
+core <- cbind(ctrl[idx,-1], treated[idx,-1])
+pval <- apply(core,1,lrtest,ctrl.tpoint,treated.tpoint)
+qval <- p.adjust(pval, 'BH')
+diff <- rowMeans(diff[idx,-1])
+df <- data.frame(qval=qval,gene=ctrl$Gene[idx],diff=diff)
 #tf.ts <- treated[idx,]
 ##treated <- list(dat=tf.ts[qval<0.05,], cond='NHK', tpoint=treated.tpoint)
 ##df <- plot.impulse(treated, '~/data/hdf/hdf-tf_impulse.pdf')
@@ -991,28 +1026,43 @@ for (i in 1:length(idx)) {
 #    ylab(expression(paste(-log[10]~italic(q),'-value'))) +
 #    opts(title='TF differential expression over time\n')
 #)
+# interpolation
+treated.interpol <- t(apply(treated[,-1],1,function(x)
+    spline(treated.tpoint,x,n=25,xmin=0,xmax=24)$y))
+ctrl.interpol <- t(apply(ctrl[,-1],1,function(x)
+    spline(ctrl.tpoint,x,n=25,xmin=0,xmax=24)$y))
+treated.interpol <- as.data.frame(treated.interpol)
+names(treated.interpol) <- 0:24
+treated.interpol$Gene <- treated$Gene
+ctrl.interpol <- as.data.frame(ctrl.interpol)
+names(ctrl.interpol) <- 0:24
+ctrl.interpol$Gene <- ctrl$Gene
+
 tf.sig <- unique(df$gene[df$diff>0&df$qval<0.05])
-treated <- list(dat=treated[match(tf.sig,treated$Gene),], cond='NHK', 
-    tpoint=treated.tpoint)
-df <- plot.logistic(treated, '~/data/hdf/hdf-tf_logistic.pdf')
-idx.treated <- which(names(treated)=='Gene')
-fit.treated <- apply(treated[match(tf.sig,treated$Gene),-idx.treated],1,
-    function(x) fit.logistic(treated.tpoint,x))
-nfit <- 100
-xfit <- seq(0,max(treated.tpoint),length=nfit)
-uptime <- apply(fit.treated,2,function(x)xfit[which.max(abs(diff(x)/diff(xfit)))])
-df <- as.data.frame(uptime)
-#res <- hist(uptime, plot=F)
-#df <- data.frame(x=res$mids, y=res$counts, type='q-value')
-print(ggplot(df,aes(uptime)) + geom_histogram() + 
-    #geom_bar(stat='identity',fill='gray',colour='black') +
-    #geom_segment(aes(x=uptime,y=0,xend=uptime,yend=0.05),alpha=0.3) +
-    #scale_colour_brewer(palette='Set1') +
-    #geom_text(data=df[df$TNFR<df$CXCR4,],aes(label=TF),alpha=0.3) +
-    #xlim(0,6) + ylim(0,6) +
-    labs(x='Upregulation time (h)',y='Count',
-        title='Temporal activation of TFs (fibroblast)\n')
-)
+tf.ctrl <- list(dat=ctrl.interpol[match(tf.sig,ctrl$Gene),], cond='Control', 
+    tpoint=0:24)
+tf.treated <- list(dat=treated.interpol[match(tf.sig,treated$Gene),], cond='NHK', 
+    tpoint=0:24)
+df <- plot.full.reduced.interval(tf.ctrl, tf.treated, 
+    '~/data/hdf/hdf-tf_full_reduced_interval.pdf', c(0,4,8,12,16,20,24))
+#idx.treated <- which(names(treated)=='Gene')
+#fit.treated <- apply(treated[match(tf.sig,treated$Gene),-idx.treated],1,
+#    function(x) fit.logistic(treated.tpoint,x))
+#nfit <- 100
+#xfit <- seq(0,max(treated.tpoint),length=nfit)
+#uptime <- apply(fit.treated,2,function(x)xfit[which.max(abs(diff(x)/diff(xfit)))])
+#df <- as.data.frame(uptime)
+##res <- hist(uptime, plot=F)
+##df <- data.frame(x=res$mids, y=res$counts, type='q-value')
+#print(ggplot(df,aes(uptime)) + geom_histogram() + 
+#    #geom_bar(stat='identity',fill='gray',colour='black') +
+#    #geom_segment(aes(x=uptime,y=0,xend=uptime,yend=0.05),alpha=0.3) +
+#    #scale_colour_brewer(palette='Set1') +
+#    #geom_text(data=df[df$TNFR<df$CXCR4,],aes(label=TF),alpha=0.3) +
+#    #xlim(0,6) + ylim(0,6) +
+#    labs(x='Upregulation time (h)',y='Count',
+#        title='Temporal activation of TFs (fibroblast)\n')
+#)
 @
 
 % ----------------------------------------------------------------------------

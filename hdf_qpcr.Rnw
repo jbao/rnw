@@ -52,7 +52,7 @@ library(sn)
 library(dtw)
 library(NORMT3)
 library(Biostrings)
-library(gprege)
+#library(gprege)
 library(devtools)
 load_all('~/tool/util')
 
@@ -135,6 +135,52 @@ gene[which(gene=='TGF-B')] <- 'TGFB1'
 all.param$gene <- gene
 write.table(all.param, '~/data/hdf/hdf_qpcr_pval.tsv', sep='\t', row.names=F, 
     quote=F)
+@
+
+% ----------------------------------------------------------------------------
+
+<<label=ts_example,echo=False,fig=True,width=8,height=6,eval=True>>=
+goi <- c('IL6','SAA2','CCL8','IL8','CXCL1','CXCL2')
+df <- subset(all.dat, gene %in% goi)
+df$gene <- factor(df$gene, levels=goi)
+
+# get the p-value
+df.param <- ddply(df, .(gene), lrtest.replicate)
+df.param$label <- sprintf("p==%.1e",df.param$V1)
+
+# rearrange the data frame to plot the fitting curve
+all.fit <- ddply(df, .(gene), fit.full.replicate)
+fit.ctrl <- all.fit[as.numeric(all.fit$cond)==1,]
+fit.treated <- all.fit[as.numeric(all.fit$cond)==2,]
+fit.ctrl <- ddply(fit.ctrl, .(gene), function(x) x[x$replicate==levels(factor(x$replicate))[1],])
+fit.treated <- ddply(fit.treated, .(gene), function(x) x[x$replicate==levels(factor(x$replicate))[1],])
+df.fit <- rbind(fit.ctrl, fit.treated)
+df.fit <- within(df.fit, cond <- factor(cond, levels = c('IKKi','paracrine')))
+
+df <- within(df, cond <- factor(cond, levels = c('IKKi','paracrine')))
+print(ggplot(df, aes(time,val)) + 
+    geom_point(aes(colour=cond)) + geom_smooth(aes(colour=cond)) +
+    #geom_line(aes(colour=cond)) + 
+    #geom_line(data=df.fit,aes(time,fit,colour=cond)) +
+    #geom_ribbon(data=df.fit,aes(ymin=lcl,ymax=ucl),alpha=0.2) +
+    #geom_line(data=fit.ctrl,aes(time,value),alpha=0.2,linetype='dashed') +
+    #geom_line(data=fit.treated,aes(time,value),alpha=0.2,linetype='dashed') +
+    geom_text(data=df.param, aes(x=3,y=15,label=label),size=3,parse=T) +
+    facet_wrap(~gene, ncol=3) + 
+    scale_colour_brewer('',palette='Set1') +
+    #ylim(-4,7) +
+    labs(x='time (h)',y=expression(paste(log[2]~'fold expression'))) +
+    theme(legend.position=c(0.9,0.95),legend.key=element_blank(),
+        legend.background=element_blank())
+)
+#all.param <- ddply(all.dat, .(gene), lrtest.replicate)
+#gene <- toupper(as.vector(all.param$gene))
+#gene[which(gene=='CyD1')] <- 'CCND1'
+#gene[which(gene=='KI67')] <- 'MKI67'
+#gene[which(gene=='TGF-B')] <- 'TGFB1'
+#all.param$gene <- gene
+#write.table(all.param, '~/data/hdf/hdf_qpcr_pval.tsv', sep='\t', row.names=F, 
+#    quote=F)
 @
 
 % ----------------------------------------------------------------------------
